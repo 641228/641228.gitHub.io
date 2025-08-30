@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简易扫码器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+        }
+        #video-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        video {
+            width: 100%;
+            height: auto;
+        }
+        #scan-region {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 250px;
+            height: 250px;
+            transform: translate(-50%, -50%);
+            border: 2px solid #4CAF50;
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            width: 100%;
+            max-width: 600px;
+            min-height: 60px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: none;
+        }
+        button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>简易扫码器</h1>
+    <div id="video-container">
+        <video id="video" autoplay playsinline></video>
+        <div id="scan-region"></div>
+    </div>
+    <div id="result"></div>
+    <button id="start-btn">开始扫描</button>
+
+    <!-- 引入jsQR库 -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script>
+        const video = document.getElementById('video');
+        const scanRegion = document.getElementById('scan-region');
+        const resultDiv = document.getElementById('result');
+        const startBtn = document.getElementById('start-btn');
+        let canvasElement = document.createElement('canvas');
+        let canvas = canvasElement.getContext('2d');
+        let scanning = false;
+
+        // 启动摄像头
+        startBtn.addEventListener('click', () => {
+            if (scanning) {
+                stopScan();
+            } else {
+                startScan();
+            }
+        });
+
+        function startScan() {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.setAttribute('playsinline', true);
+                    video.play();
+                    scanning = true;
+                    startBtn.textContent = '停止扫描';
+                    requestAnimationFrame(tick);
+                })
+                .catch(err => {
+                    showResult(`启动摄像头失败: ${err.message}`, false);
+                });
+        }
+
+        function stopScan() {
+            scanning = false;
+            startBtn.textContent = '开始扫描';
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        // 扫描处理
+        function tick() {
+            if (!scanning) return;
+            
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                // 设置canvas尺寸与视频一致
+                canvasElement.height = video.videoHeight;
+                canvasElement.width = video.videoWidth;
+                canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+                
+                // 获取扫描区域坐标
+                const rect = scanRegion.getBoundingClientRect();
+                const videoRect = video.getBoundingClientRect();
+                
+                // 计算相对视频的比例
+                const x = (rect.left - videoRect.left) / videoRect.width;
+                const y = (rect.top - videoRect.top) / videoRect.height;
+                const width = rect.width / videoRect.width;
+                const height = rect.height / videoRect.height;
+
+                // 截取扫描区域图像数据
+                const imageData = canvas.getImageData(
+                    x * canvasElement.width,
+                    y * canvasElement.height,
+                    width * canvasElement.width,
+                    height * canvasElement.height
+                );
+
+                // 识别二维码
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+
+                if (code) {
+                    handleResult(code.data);
+                }
+            }
+            requestAnimationFrame(tick);
+        }
+
+        // 处理扫描结果
+        function handleResult(data) {
+            // 检查是否为链接
+            try {
+                new URL(data);
+                // 是链接则自动跳转
+                window.location.href = data;
+            } catch {
+                // 是文字则显示
+                showResult(data, true);
+            }
+        }
+
+        // 显示结果
+        function showResult(text, isSuccess) {
+            resultDiv.textContent = text;
+            resultDiv.style.display = 'block';
+            resultDiv.style.color = isSuccess ? '#333' : '#ff0000';
+        }
+    </script>
+</body>
+</html>
